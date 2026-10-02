@@ -10,25 +10,19 @@ import (
 	"strings"
 
 	"database/sql"
+	"github.com/komalkowshikkanuri/distributed-job-system/internal/handler"
+	"github.com/komalkowshikkanuri/distributed-job-system/internal/models"
+	"github.com/komalkowshikkanuri/distributed-job-system/internal/repository"
+	"github.com/komalkowshikkanuri/distributed-job-system/internal/service"
 	_ "github.com/lib/pq"
 )
-
-type Job struct {
-	JobID   int    `json:"job_id"`
-	JobType string `json:"type"`
-	Status  string `json:"status"`
-}
 
 type CreateJobRequest struct {
 	UserID int    `json:"user_id"`
 	Type   string `json:"type"`
 }
 
-type UpdateJobRequest struct {
-	Status string `json:"status"`
-}
-
-func handler(w http.ResponseWriter, r *http.Request) {
+func rootHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Println("ROOT HANDLER:", r.Method, r.URL.Path)
 
 	if r.Method != http.MethodGet {
@@ -60,7 +54,7 @@ func createJob(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
-		var job Job
+		var job models.Job
 		err = db.QueryRow(
 			`INSERT INTO jobs (user_id, type, status)
 			VALUES ($1, $2, $3)
@@ -96,10 +90,10 @@ func getJobs(db *sql.DB) http.HandlerFunc {
 		}
 
 		defer rows.Close()
-		var jobs []Job
+		var jobs []models.Job
 
 		for rows.Next() {
-			var job Job
+			var job models.Job
 			err := rows.Scan(
 				&job.JobID,
 				&job.JobType,
@@ -136,7 +130,7 @@ func getJob(db *sql.DB) http.HandlerFunc {
 				return
 			}
 
-			var job Job
+			var job models.Job
 			row := db.QueryRow(`SELECT id, type, status
 					FROM jobs
 					WHERE id = $1`, jobID,
@@ -165,59 +159,6 @@ func getJob(db *sql.DB) http.HandlerFunc {
 				http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 				return
 			}
-
-		case http.MethodPatch:
-			var update UpdateJobRequest
-			err := json.NewDecoder(r.Body).Decode(&update)
-
-			if err != nil {
-				http.Error(w, "Bad Request", http.StatusBadRequest)
-				return
-			}
-
-			parts := strings.Split(r.URL.Path, "/")
-			jobID, err := strconv.Atoi(parts[len(parts)-1])
-
-			if err != nil {
-				http.Error(w, "Bad Request", http.StatusBadRequest)
-				return
-			}
-
-			if update.Status != "pending" &&
-				update.Status != "processing" &&
-				update.Status != "completed" &&
-				update.Status != "failed" {
-				http.Error(w, "Bad Request", http.StatusBadRequest)
-				return
-
-			}
-
-			result, err := db.Exec(
-				`UPDATE jobs
-					SET status = $1
-					WHERE id = $2`,
-				update.Status, jobID,
-			)
-
-			if err != nil {
-				http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-				return
-			}
-
-			rowsAffected, err := result.RowsAffected()
-
-			if err != nil {
-				http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-				return
-			}
-
-			if rowsAffected == 0 {
-				http.Error(w, "Not Found", http.StatusNotFound)
-				return
-			}
-
-			w.WriteHeader(http.StatusNoContent)
-			return
 
 		default:
 			http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
@@ -248,10 +189,13 @@ func main() {
 
 	fmt.Println("Database connected!")
 
-	http.HandleFunc("/", handler)
+	jobRepo := repository.NewJobRepository(db)
+	jobService := service.NewJobService(jobRepo)
+	jobHandler := handler.NewJobHandler(jobService)
+	http.HandleFunc("/", rootHandler)
 	http.HandleFunc("/job", createJob(db))
 	http.HandleFunc("/jobs", getJobs(db))
-	http.HandleFunc("/jobs/", getJob(db))
+	http.HandleFunc("/jobs/", jobHandler.JobHTTP)
 
 	fmt.Println("Server running on :8080")
 	http.ListenAndServe(":8080", nil)
