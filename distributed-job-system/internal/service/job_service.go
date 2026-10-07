@@ -12,7 +12,7 @@ type JobService struct {
 }
 
 func NewJobService(pointer *repository.JobRepository) *JobService {
-	return &JobService {
+	return &JobService{
 		repo: pointer,
 	}
 }
@@ -23,12 +23,12 @@ func (s *JobService) GetJob(jobID int) (models.Job, error) {
 	if err != nil {
 		return job, err
 	}
-	
+
 	return job, nil
 }
 
 func (s *JobService) UpdateJob(jobID int, status string) error {
-	validStatuses := map[string]bool {
+	validStatuses := map[string]bool{
 		"pending":    true,
 		"processing": true,
 		"completed":  true,
@@ -40,7 +40,7 @@ func (s *JobService) UpdateJob(jobID int, status string) error {
 	}
 
 	currentJob, err := s.repo.GetJob(jobID)
-	
+
 	if err != nil {
 		return err
 	}
@@ -48,7 +48,7 @@ func (s *JobService) UpdateJob(jobID int, status string) error {
 	if currentJob.Status == "pending" && status != "processing" {
 		return errors.New("invalid job status transition")
 	}
-	
+
 	if currentJob.Status == "processing" && status != "completed" && status != "failed" {
 		return errors.New("invalid job status transition")
 	}
@@ -56,7 +56,7 @@ func (s *JobService) UpdateJob(jobID int, status string) error {
 	if currentJob.Status == "failed" && status != "pending" {
 		return errors.New("invalid job status transition")
 	}
-	
+
 	if currentJob.Status == "completed" {
 		return errors.New("invalid job status transition")
 	}

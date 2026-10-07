@@ -12,8 +12,12 @@ import (
 	"database/sql"
 	"github.com/komalkowshikkanuri/distributed-job-system/internal/handler"
 	"github.com/komalkowshikkanuri/distributed-job-system/internal/models"
+	"github.com/komalkowshikkanuri/distributed-job-system/internal/redis"
 	"github.com/komalkowshikkanuri/distributed-job-system/internal/repository"
 	"github.com/komalkowshikkanuri/distributed-job-system/internal/service"
+
+	goredis "github.com/redis/go-redis/v9"
+
 	_ "github.com/lib/pq"
 )
 
@@ -32,7 +36,7 @@ func rootHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintln(w, "Distributed Job System API")
 }
 
-func createJob(db *sql.DB) http.HandlerFunc {
+func createJob(db *sql.DB, redisClient *goredis.Client) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		fmt.Println("CREATE JOB HANDLER:", r.Method, r.URL.Path)
 
@@ -65,6 +69,14 @@ func createJob(db *sql.DB) http.HandlerFunc {
 		if err != nil {
 			fmt.Println("DATABASE ERROR:", err)
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			return
+		}
+
+		_, err = redisClient.LPush(r.Context(), "job_queue", job.JobID).Result()
+
+		if err != nil {
+			fmt.Println("Redis Error", err)
+			http.Error(w, "Failed to enqueue job", http.StatusInternalServerError)
 			return
 		}
 
@@ -189,11 +201,19 @@ func main() {
 
 	fmt.Println("Database connected!")
 
+	redis.NewClient()
+
+	if err := redis.Ping(); err != nil {
+		log.Fatal("Redis connection failed:", err)
+	}
+
+	fmt.Println("Redis connected!")
+
 	jobRepo := repository.NewJobRepository(db)
 	jobService := service.NewJobService(jobRepo)
 	jobHandler := handler.NewJobHandler(jobService)
 	http.HandleFunc("/", rootHandler)
-	http.HandleFunc("/job", createJob(db))
+	http.HandleFunc("/job", createJob(db, redis.Client))
 	http.HandleFunc("/jobs", getJobs(db))
 	http.HandleFunc("/jobs/", jobHandler.JobHTTP)
 
