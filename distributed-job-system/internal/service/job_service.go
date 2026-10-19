@@ -63,3 +63,52 @@ func (s *JobService) UpdateJob(jobID int, status string) error {
 
 	return s.repo.UpdateJob(jobID, status)
 }
+
+func (s *JobService) CreateAttempt(jobID int) (int, error) {
+	attemptID, err := s.repo.CreateAttempt(jobID)
+
+	if err != nil {
+		return attemptID, err
+	}
+
+	return attemptID, nil
+}
+
+func (s *JobService) UpdateAttemptStatus(attemptID int, status string) error {
+	validStatuses := map[string]bool{
+		"pending":    true,
+		"processing": true,
+		"completed":  true,
+		"failed":     true,
+	}
+
+	if !validStatuses[status] {
+		return errors.New("invalid attempt status")
+	}
+
+	err := s.repo.UpdateAttemptStatus(attemptID, status)
+
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (s *JobService) CanRetry(currentAttempt int, maximumAttempts int) bool {
+	if currentAttempt > 0 && maximumAttempts > 0 && currentAttempt < maximumAttempts {
+		return true
+	}
+
+	return false
+}
+
+func (s *JobService) Attempts(jobID int) (int, error) {
+	currentAttempt, err := s.repo.Attempts(jobID)
+
+	if err != nil {
+		return 0, err
+	}
+
+	return currentAttempt, nil
+}
