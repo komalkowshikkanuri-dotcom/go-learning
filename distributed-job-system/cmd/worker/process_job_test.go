@@ -24,7 +24,7 @@ func TestProcessJob(t *testing.T) {
 
 	if err := redis.Ping(); err != nil {
 		fmt.Println("Redis Connection failed", err)
-		return
+		t.Fatal(err)
 	}
 
 	fmt.Println("Worker connected to Redis")
@@ -289,4 +289,147 @@ func TestMarkJobActive(t *testing.T) {
 	if !job2 {
 		t.Fatal("expected job 202 to be marked active")
 	}
+}
+
+func TestProcessMultipleJobs(t *testing.T) {
+	connStr := "host=127.0.0.1 port=5432 database=job_system user=postgres password=" + os.Getenv("DB_PASSWORD") + " sslmode=disable"
+
+	db, err := sql.Open("postgres", connStr)
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() {
+		db.Close()
+	})
+
+	if err := db.Ping(); err != nil {
+		t.Fatal(err)
+	}
+
+	redis.NewClient()
+	defer redis.Client.Close()
+
+	if err := redis.Ping(); err != nil {
+		t.Fatal(err)
+	}
+
+	fmt.Println("Worker connected to Redis")
+
+	cxt := context.Background()
+
+	repo := repository.NewJobRepository(db)
+	jobService := service.NewJobService(repo)
+
+	var jobID int
+	var jobIDs []int
+
+	t.Cleanup(func() {
+		for _, id := range jobIDs {
+			_, err := db.Exec(`DELETE FROM job_attempts WHERE job_id = $1`,
+				id,
+			)
+
+			if err != nil {
+				t.Errorf("failed to delete test attempts: %v", err)
+			}
+
+			_, err = db.Exec(`DELETE FROM jobs WHERE id = $1`,
+				id,
+			)
+
+			if err != nil {
+				t.Errorf("failed to delete test job: %v", err)
+			}
+		}
+	})
+
+	for range 3 {
+		err = db.QueryRow(
+			`INSERT INTO jobs (type, status)
+        		VALUES ($1, $2)
+        		RETURNING id`,
+			"week4_day4_test", "pending",
+		).Scan(&jobID)
+
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		jobIDs = append(jobIDs, jobID)
+	}
+
+	shouldRetryByJob := make(map[int]bool)
+
+	for _, id := range jobIDs {
+		shouldRetry, err := processJob(id, jobService, cxt, redis.Client)
+
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		shouldRetryByJob[id] = shouldRetry
+	}
+
+	for _, id := range jobIDs {
+		var status string
+
+		err := db.QueryRow(
+			`SELECT status FROM jobs 
+			WHERE id = $1`,
+			id,
+		).Scan(&status)
+
+		if err != nil {
+			t.Fatalf("Failed to load the status %v", err)
+		}
+
+		if status != "pending" {
+			t.Errorf("Expected pending, got: %q", status)
+		}
+	}
+
+	for _, id := range jobIDs {
+		var attemptCount int
+
+		err := db.QueryRow(
+			`SELECT COUNT(*) 
+			FROM job_attempts 
+			WHERE job_id = $1`,
+			id,
+		).Scan(&attemptCount)
+
+		if err != nil {
+			t.Fatalf("Failed to count the job attempts %v", err)
+		}
+
+		if attemptCount != 1 {
+			t.Errorf("expected 1 attempt, got %d", attemptCount)
+		}
+
+	}
+
+	for _, id := range jobIDs {
+		var attemptStatus string
+
+		err := db.QueryRow(
+			`SELECT status FROM job_attempts 
+			WHERE job_id = $1`,
+			id,
+		).Scan(&attemptStatus)
+
+		if err != nil {
+			t.Fatalf("Failed to load the attempt status %v", err)
+		}
+
+		if attemptStatus != "failed" {
+			t.Errorf("expected 'failed' attempt, got %q", attemptStatus)
+		}
+
+		if !shouldRetryByJob[id] {
+			t.Errorf("job %d was expected to be eligible for retry", id)
+		}
+	}
+
 }
