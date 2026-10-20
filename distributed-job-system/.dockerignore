@@ -1,0 +1,9 @@
+.git
+.env
+.env-
+.env-*
+*.log
+*.exe
+*.test
+tmp-attempt-test/
+schema.sql

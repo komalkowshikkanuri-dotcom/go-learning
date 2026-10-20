@@ -5,11 +5,12 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"os"
+	//"os"
 	"strconv"
 	"strings"
 
 	"database/sql"
+	"github.com/komalkowshikkanuri/distributed-job-system/internal/config"
 	"github.com/komalkowshikkanuri/distributed-job-system/internal/handler"
 	"github.com/komalkowshikkanuri/distributed-job-system/internal/models"
 	"github.com/komalkowshikkanuri/distributed-job-system/internal/redis"
@@ -181,9 +182,14 @@ func getJob(db *sql.DB) http.HandlerFunc {
 }
 
 func main() {
-	connStr := "host=127.0.0.1 port=5432 database=job_system user=postgres password=" + os.Getenv("DB_PASSWORD") + " sslmode=disable"
+	cfg := config.Load()
 
-	fmt.Println("Using PostgreSQL connection with SSL disabled")
+	connStr := fmt.Sprintf(
+		"host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
+		cfg.DBHost, cfg.DBPort, cfg.DBUser, cfg.DBPassword, cfg.DBName, cfg.DBSSLMode,
+	)
+
+	fmt.Println("Connecting to PostgreSQL...")
 
 	db, err := sql.Open("postgres", connStr)
 
@@ -201,7 +207,7 @@ func main() {
 
 	fmt.Println("Database connected!")
 
-	redis.NewClient()
+	redis.NewClient(cfg.RedisAddr)
 
 	if err := redis.Ping(); err != nil {
 		log.Fatal("Redis connection failed:", err)

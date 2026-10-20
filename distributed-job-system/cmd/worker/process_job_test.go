@@ -4,13 +4,14 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"os"
+	//"os"
 	//"strconv"
 	"sync"
 	"testing"
 
 	//goredis "github.com/redis/go-redis/v9"
 
+	"github.com/komalkowshikkanuri/distributed-job-system/internal/config"
 	"github.com/komalkowshikkanuri/distributed-job-system/internal/redis"
 	"github.com/komalkowshikkanuri/distributed-job-system/internal/repository"
 	"github.com/komalkowshikkanuri/distributed-job-system/internal/service"
@@ -19,7 +20,8 @@ import (
 )
 
 func TestProcessJob(t *testing.T) {
-	redis.NewClient()
+	cfg := config.Load()
+	redis.NewClient(cfg.RedisAddr)
 	defer redis.Client.Close()
 
 	if err := redis.Ping(); err != nil {
@@ -31,8 +33,10 @@ func TestProcessJob(t *testing.T) {
 
 	cxt := context.Background()
 
-	connStr := "host=127.0.0.1 port=5432 database=job_system user=postgres password=" + os.Getenv("DB_PASSWORD") + " sslmode=disable"
-
+	connStr := fmt.Sprintf(
+		"host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
+		cfg.DBHost, cfg.DBPort, cfg.DBUser, cfg.DBPassword, cfg.DBName, cfg.DBSSLMode,
+	)
 	db, err := sql.Open("postgres", connStr)
 
 	if err != nil {
@@ -153,7 +157,12 @@ func TestProcessJob(t *testing.T) {
 }
 
 func TestUpdateAttemptStatus(t *testing.T) {
-	connStr := "host=127.0.0.1 port=5432 database=job_system user=postgres password=" + os.Getenv("DB_PASSWORD") + " sslmode=disable"
+	cfg := config.Load()
+
+	connStr := fmt.Sprintf(
+		"host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
+		cfg.DBHost, cfg.DBPort, cfg.DBUser, cfg.DBPassword, cfg.DBName, cfg.DBSSLMode,
+	)
 
 	db, err := sql.Open("postgres", connStr)
 
@@ -292,8 +301,12 @@ func TestMarkJobActive(t *testing.T) {
 }
 
 func TestProcessMultipleJobs(t *testing.T) {
-	connStr := "host=127.0.0.1 port=5432 database=job_system user=postgres password=" + os.Getenv("DB_PASSWORD") + " sslmode=disable"
+	cfg := config.Load()
 
+	connStr := fmt.Sprintf(
+		"host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
+		cfg.DBHost, cfg.DBPort, cfg.DBUser, cfg.DBPassword, cfg.DBName, cfg.DBSSLMode,
+	)
 	db, err := sql.Open("postgres", connStr)
 
 	if err != nil {
@@ -308,7 +321,7 @@ func TestProcessMultipleJobs(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	redis.NewClient()
+	redis.NewClient(cfg.RedisAddr)
 	defer redis.Client.Close()
 
 	if err := redis.Ping(); err != nil {

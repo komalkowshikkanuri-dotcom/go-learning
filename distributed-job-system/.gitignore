@@ -1,0 +1,20 @@
+# Environment secrets
+.env
+.env.*
+.env-
+.env-*
+
+# Go build outputs
+/bin/
+/dist/
+*.exe
+*.test
+
+# Local logs
+*.log
+
+# IDE and OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

@@ -7,9 +7,9 @@ import (
 
 var Client *goredis.Client
 
-func NewClient() {
+func NewClient(addr string) {
 	Client = goredis.NewClient(&goredis.Options{
-		Addr: "localhost:6379",
+		Addr: addr,
 	})
 }
 

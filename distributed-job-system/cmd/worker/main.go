@@ -14,6 +14,7 @@ import (
 
 	goredis "github.com/redis/go-redis/v9"
 
+	"github.com/komalkowshikkanuri/distributed-job-system/internal/config"
 	"github.com/komalkowshikkanuri/distributed-job-system/internal/redis"
 	"github.com/komalkowshikkanuri/distributed-job-system/internal/repository"
 	"github.com/komalkowshikkanuri/distributed-job-system/internal/service"
@@ -22,7 +23,8 @@ import (
 )
 
 func main() {
-	redis.NewClient()
+	cfg := config.Load()
+	redis.NewClient(cfg.RedisAddr)
 	defer redis.Client.Close()
 
 	if err := redis.Ping(); err != nil {
@@ -34,16 +36,11 @@ func main() {
 
 	cxt := context.Background()
 
-	connStr := "host=127.0.0.1 port=5432 database=job_system user=postgres password=" + os.Getenv("DB_PASSWORD") + " sslmode=disable"
-
+	connStr := fmt.Sprintf(
+		"host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
+		cfg.DBHost, cfg.DBPort, cfg.DBUser, cfg.DBPassword, cfg.DBName, cfg.DBSSLMode,
+	)
 	fmt.Println("DB password set:", os.Getenv("DB_PASSWORD") != "")
-
-	fmt.Println("Host: 127.0.0.1")
-	fmt.Println("Port: 5432")
-	fmt.Println("Database: job_system")
-	fmt.Println("User: postgres")
-	fmt.Println("Password set:", os.Getenv("DB_PASSWORD") != "")
-	fmt.Println("SSL mode: disable")
 
 	db, err := sql.Open("postgres", connStr)
 
@@ -196,6 +193,19 @@ func processJob(jobID int, jobService *service.JobService, cxt context.Context, 
 	}
 
 	fmt.Println("Job is now Processing")
+
+	if job.JobType == "docker-success-test" {
+		if err := jobService.UpdateAttemptStatus(attemptID, "completed"); err != nil {
+			return false, err
+		}
+
+		if err := jobService.UpdateJob(job.JobID, "completed"); err != nil {
+			return false, err
+		}
+
+		fmt.Println("Job completed successfully:", job.JobID)
+		return false, nil
+	}
 
 	err = errors.New("simulated failure")
 
