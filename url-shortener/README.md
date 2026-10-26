@@ -1,584 +1,344 @@
-\# URL Shortener in Go
+﻿
+# Go URL Shortener
 
+A URL shortener built with Go, PostgreSQL, and Redis. The application exposes an HTTP API for creating short URLs and redirecting requests to their original destinations. PostgreSQL provides persistent storage, while Redis caches URL mappings to reduce repeated database lookups.
 
+The project uses a layered application architecture, includes unit tests, and runs with Docker Compose.
 
-A URL shortener built with Go, PostgreSQL, and Redis. The application exposes an HTTP API to create short URLs and redirects requests to their original destinations. Redis is used to cache URL mappings, while PostgreSQL provides persistent storage.
+## Features
 
+- Create short URLs through `POST /shorten`.
+- Redirect short codes using HTTP `302 Found`.
+- Persist URL mappings in PostgreSQL.
+- Cache URL lookups in Redis with a 15-minute TTL.
+- Fall back to PostgreSQL when a cache lookup fails.
+- Validate submitted URLs and malformed JSON requests.
+- Retry short-code generation when a database uniqueness conflict occurs.
+- Unit tests for code generation, service logic, caching, and HTTP handlers.
+- Run the API, PostgreSQL, and Redis with Docker Compose.
+- Initialize the database table automatically for fresh PostgreSQL data directories.
+- Persist PostgreSQL data in a named Docker volume.
 
+## Tech Stack
 
-\## Features
+- **Language:** Go
+- **HTTP server:** Go `net/http`
+- **Database:** PostgreSQL
+- **Cache:** Redis
+- **PostgreSQL driver:** `github.com/lib/pq`
+- **Redis client:** `github.com/redis/go-redis/v9`
+- **Containerization:** Docker and Docker Compose
 
+## Architecture
 
+The request flow for URL creation and redirection is:
 
-\- Create short URLs through a REST-style HTTP endpoint.
+1. A client sends a request to the Go HTTP API.
+2. The handler validates the request and passes work to the service layer.
+3. For URL creation, the service generates a short code and stores the mapping in PostgreSQL.
+4. For redirection, the service checks Redis first.
+5. If Redis has no mapping or is unavailable, the service queries PostgreSQL.
+6. A successful database lookup is cached in Redis on a best-effort basis.
+7. The API redirects the client to the original URL with HTTP `302 Found`.
 
-\- Redirect short codes to their original URLs using HTTP `302 Found`.
+## Project Structure
 
-\- Persist URL mappings in PostgreSQL.
+- `internal/`
+  - `cache/`
+    - `redis_cache.go`
+  - `handler/`
+    - `url_handler.go`
+    - `url_handler_test.go`
+  - `repository/`
+    - `url_repository.go`
+  - `service/`
+    - `code_generator.go`
+    - `code_generator_test.go`
+    - `url_service.go`
+    - `url_service_test.go`
+- `.dockerignore`
+- `.env.example`
+- `compose.yaml`
+- `Dockerfile`
+- `go.mod`
+- `go.sum`
+- `init.sql`
+- `main.go`
+- `README.md`
 
-\- Cache URL mappings in Redis with a configurable time-to-live (TTL).
+## Component Responsibilities
 
-\- Fall back to PostgreSQL when a cache lookup fails.
+- **`main.go`:** Initializes dependencies and configures the HTTP server.
+- **`internal/handler/`:** Handles HTTP requests, input validation, and responses.
+- **`internal/service/`:** Implements URL-shortening logic, code-generation orchestration, and cache/database lookup behavior.
+- **`internal/repository/`:** Handles PostgreSQL operations.
+- **`internal/cache/`:** Implements Redis caching with TTL support.
+- **`Dockerfile`:** Builds the Go application into a minimal runtime image.
+- **`compose.yaml`:** Configures the API, PostgreSQL, Redis, health checks, ports, and persistent storage.
+- **`init.sql`:** Creates the URL mappings table when PostgreSQL initializes a fresh data directory.
+- **`.env.example`:** Provides a template for local environment configuration.
 
-\- Validate submitted URLs and handle malformed JSON requests.
+## Prerequisites
 
-\- Retry short-code generation when a database uniqueness conflict occurs.
+For the Docker-based setup:
 
-\- Unit tests for URL generation, service logic, cache behavior, and HTTP handlers.
+- Docker Desktop with Docker Compose
+- Git
 
+For local development without Docker:
 
+- A Go version compatible with `go.mod`
+- PostgreSQL
+- Redis
 
-\## Tech Stack
+## Getting Started with Docker Compose
 
+### 1. Clone the repository
 
-
-\- \*\*Language:\*\* Go
-
-\- \*\*HTTP server:\*\* Go `net/http`
-
-\- \*\*Database:\*\* PostgreSQL
-
-\- \*\*Cache:\*\* Redis
-
-\- \*\*PostgreSQL driver:\*\* `github.com/lib/pq`
-
-\- \*\*Redis client:\*\* `github.com/redis/go-redis/v9`
-
-
-
-\## Project Structure
-
-
-
-```text
-
-url-shortener/
-
-├── main.go
-
-├── go.mod
-
-├── go.sum
-
-└── internal/
-
-&#x20;   ├── cache/
-
-&#x20;   │   └── redis\_cache.go
-
-&#x20;   ├── handler/
-
-&#x20;   │   ├── url\_handler.go
-
-&#x20;   │   └── url\_handler\_test.go
-
-&#x20;   ├── repository/
-
-&#x20;   │   └── url\_repository.go
-
-&#x20;   └── service/
-
-&#x20;       ├── code\_generator.go
-
-&#x20;       ├── code\_generator\_test.go
-
-&#x20;       ├── url\_service.go
-
-&#x20;       └── url\_service\_test.go
-
+```bash
+git clone YOUR_REPOSITORY_URL
+cd url-shortener
 ```
 
+Replace `YOUR_REPOSITORY_URL` with your actual repository URL.
 
+### 2. Configure environment variables
 
-\### Responsibilities
-
-
-
-\- `main.go`: Initializes dependencies and configures the HTTP server.
-
-\- `internal/handler/`: Handles HTTP requests, validates inputs, and produces HTTP responses.
-
-\- `internal/service/`: Implements URL-shortening logic, code generation orchestration, and cache/database lookup behavior.
-
-\- `internal/repository/`: Handles PostgreSQL operations.
-
-\- `internal/cache/`: Implements Redis-based caching with TTL support.
-
-
-
-\## Architecture
-
-
-
-```text
-
-&#x20;                Client
-
-&#x20;                  |
-
-&#x20;                  v
-
-&#x20;             HTTP Handler
-
-&#x20;                  |
-
-&#x20;                  v
-
-&#x20;              URL Service
-
-&#x20;                  |
-
-&#x20;            Redirect lookup
-
-&#x20;                  |
-
-&#x20;                  v
-
-&#x20;              Redis Cache
-
-&#x20;               /       \\
-
-&#x20;          Cache hit   Cache miss
-
-&#x20;              |           |
-
-&#x20;              |           v
-
-&#x20;              |       PostgreSQL
-
-&#x20;              |           |
-
-&#x20;              |           v
-
-&#x20;              |       Populate cache
-
-&#x20;              |           |
-
-&#x20;              +-----+-----+
-
-&#x20;                    |
-
-&#x20;                    v
-
-&#x20;               HTTP 302
-
-&#x20;                    |
-
-&#x20;                    v
-
-&#x20;            Original destination
-
-```
-
-
-
-For URL creation, the service generates a short code and stores the mapping in PostgreSQL. During redirects, the service checks Redis first and falls back to PostgreSQL if the cache lookup fails. Successful database lookups are written back to Redis on a best-effort basis.
-
-
-
-\## Prerequisites
-
-
-
-Install or configure the following:
-
-
-
-\- Go compatible with the version declared in `go.mod`
-
-\- PostgreSQL
-
-\- Redis
-
-\- Git
-
-
-
-The application defaults to Redis at `localhost:6379` unless `REDIS\_ADDR` is configured.
-
-
-
-\## Database Setup
-
-
-
-Create a PostgreSQL database named `url\_shortener`.
-
-
-
-Create the URL mappings table:
-
-
-
-```sql
-
-CREATE TABLE urls (
-
-&#x20;   id BIGSERIAL PRIMARY KEY,
-
-&#x20;   short\_code VARCHAR(10) NOT NULL UNIQUE,
-
-&#x20;   original\_url TEXT NOT NULL,
-
-&#x20;   created\_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-
-);
-
-```
-
-
-
-The table stores each short code, its original URL, and the creation timestamp. The unique constraint on `short\_code` prevents duplicate mappings.
-
-
-
-\## Configuration
-
-
-
-Configure the PostgreSQL connection using the `URL\_SHORTENER\_DB\_URL` environment variable.
-
-
-
-Example for a local development database:
-
-
-
-```text
-
-postgres://YOUR\_USER:YOUR\_PASSWORD@localhost:5432/url\_shortener?sslmode=disable
-
-```
-
-
-
-Set the environment variables in PowerShell:
-
-
+Copy the example environment file and open it:
 
 ```powershell
-
-$env:URL\_SHORTENER\_DB\_URL = "postgres://YOUR\_USER:YOUR\_PASSWORD@localhost:5432/url\_shortener?sslmode=disable"
-
-$env:REDIS\_ADDR = "localhost:6379"
-
+Copy-Item .env.example .env
+notepad .env
 ```
 
+Replace the placeholder PostgreSQL password with a unique local development password. Do not commit `.env` or publish real credentials.
 
+### 3. Start the services
 
-Replace the database username and password with your local credentials. Do not commit real passwords or other secrets to Git.
+Build the API image and start the services:
 
+```bash
+docker compose up -d --build
+```
 
+Check service status:
 
-`REDIS\_ADDR` is optional if Redis is accessible at the default address, `localhost:6379`.
+```bash
+docker compose ps
+```
 
+Inspect API logs:
 
+```bash
+docker compose logs api --tail 50
+```
 
-\## Running the Application
+The API should be available at `http://localhost:8080`.
 
+### 4. Service ports
 
+| Service | Host address | Purpose |
+|---|---|---|
+| API | `localhost:8080` | HTTP endpoints |
+| PostgreSQL | `localhost:5433` | Persistent storage |
+| Redis | `localhost:6380` | URL lookup cache |
 
-From the project root:
+The API connects to PostgreSQL and Redis using their Compose service names and internal container ports. The host ports are for connecting from your computer.
 
+### 5. Database initialization and persistence
 
+The `init.sql` file creates the `urls` table automatically when PostgreSQL initializes a fresh data directory.
+
+The database uses a named Docker volume, `postgres_data`, to persist data across container restarts and recreation. Initialization scripts are not rerun against an already-initialized PostgreSQL data directory, so changing `init.sql` will not automatically update an existing database.
+
+**Warning:** `docker compose down -v` removes the Compose-managed database volume and its stored data. Do not run it unless you intentionally want to delete that data.
+
+## Running Locally Without Docker
+
+Create a PostgreSQL database named `url_shortener`, then execute the schema in `init.sql`.
+
+Ensure PostgreSQL and Redis are running. Configure the environment variables in PowerShell, replacing the placeholders with your own database credentials:
 
 ```powershell
+$env:URL_SHORTENER_DB_URL = "host=localhost port=5432 user=YOUR_USER password=YOUR_PASSWORD dbname=url_shortener sslmode=disable"
+$env:REDIS_ADDR = "localhost:6379"
+```
 
+Download dependencies and run the server:
+
+```bash
 go mod download
-
 go run .
-
 ```
 
+The HTTP server listens on port `8080`. For local development, the default Redis address is `localhost:6379` when `REDIS_ADDR` is not configured.
 
+## API Reference
 
-The HTTP server listens on port `8080`.
+### Create a Short URL
 
+**Endpoint:** `POST /shorten`
 
+**Content-Type:** `application/json`
 
-Keep PostgreSQL and Redis running while testing the full application. The application is designed to fall back to PostgreSQL when Redis lookups fail, but PostgreSQL must be available for persistent storage and cache misses.
-
-
-
-\## API Reference
-
-
-
-\### 1. Create a Short URL
-
-
-
-\*\*Endpoint:\*\* `POST /shorten`
-
-
-
-\*\*Content-Type:\*\* `application/json`
-
-
-
-Request:
-
-
+Request body:
 
 ```json
-
 {
-
-&#x20; "url": "https://example.com/products?id=123"
-
+  "url": "https://example.com/products?id=123"
 }
-
 ```
 
-
-
-Successful response — `201 Created`:
-
-
+Successful response â€” `201 Created`:
 
 ```json
-
 {
-
-&#x20; "short\_code": "gJXpSZ",
-
-&#x20; "short\_url": "http://localhost:8080/gJXpSZ"
-
+  "short_code": "gJXpSZ",
+  "short_url": "http://localhost:8080/gJXpSZ"
 }
-
 ```
 
+The short code above is an example; actual codes are generated dynamically.
 
-
-The example short code is illustrative; the application generates codes dynamically.
-
-
-
-Example using PowerShell:
-
-
+PowerShell example:
 
 ```powershell
-
 $body = @{
-
-&#x20;   url = "https://example.com/products?id=123"
-
+    url = "https://example.com/products?id=123"
 } | ConvertTo-Json
 
-
-
 $response = Invoke-RestMethod `
-
-&#x20;   -Method Post `
-
-&#x20;   -Uri http://localhost:8080/shorten `
-
-&#x20;   -ContentType "application/json" `
-
-&#x20;   -Body $body
-
-
+    -Method Post `
+    -Uri http://localhost:8080/shorten `
+    -ContentType "application/json" `
+    -Body $body
 
 $response
-
 ```
 
+The API validates submitted URLs and rejects malformed JSON, unsupported URL formats, and requests using the wrong HTTP method.
 
+### Redirect to the Original URL
 
-The API validates the submitted URL and rejects malformed JSON, unsupported URL formats, and requests using the wrong HTTP method.
+**Endpoint:** `GET /{shortCode}`
 
+For example:
 
-
-\### 2. Redirect to the Original URL
-
-
-
-\*\*Endpoint:\*\* `GET /{shortCode}`
-
-
-
-Example:
-
-
-
-```powershell
-
+```bash
 curl.exe -i http://localhost:8080/gJXpSZ
-
 ```
 
+A successful redirect returns `302 Found` with a `Location` header pointing to the original URL:
 
-
-Expected response:
-
-
-
-```text
-
+```http
 HTTP/1.1 302 Found
-
 Location: https://example.com/products?id=123
-
 ```
-
-
-
-The browser or HTTP client can then follow the redirect to the original destination.
-
-
 
 An unknown short code returns `404 Not Found`.
 
+## Caching Behavior
 
+Redis stores short-code-to-original-URL mappings with a 15-minute TTL (900 seconds).
 
-\## Caching Behavior
+The lookup flow is:
 
+1. Attempt to retrieve the mapping from Redis.
+2. Return the cached URL if available.
+3. Query PostgreSQL if the cache misses or fails.
+4. Populate Redis after a successful database lookup, on a best-effort basis.
+5. Return a not-found response if PostgreSQL has no matching mapping.
 
+A Redis cache-write failure does not prevent a successful database lookup from returning the original URL.
 
-Redis stores short-code-to-original-URL mappings to avoid repeated database reads.
+## Manual Redis Verification
 
+With Docker Compose running, inspect a cached URL:
 
-
-The configured cache TTL is \*\*15 minutes (900 seconds)\*\*.
-
-
-
-The redirect lookup follows this sequence:
-
-
-
-1\. Attempt to retrieve the mapping from Redis.
-
-2\. If the mapping is available, return it without querying PostgreSQL.
-
-3\. If the cache lookup misses or fails, query PostgreSQL.
-
-4\. If PostgreSQL returns the mapping, attempt to populate Redis.
-
-5\. If PostgreSQL cannot find the mapping, return a not-found response through the HTTP handler.
-
-
-
-Cache writes are best-effort: a Redis write failure does not prevent a successful database lookup from returning the original URL.
-
-
-
-\## Testing
-
-
-
-Run all tests:
-
-
-
-```powershell
-
-go test ./...
-
+```bash
+docker compose exec redis redis-cli GET YOUR_SHORT_CODE
 ```
 
+Check the remaining TTL:
 
+```bash
+docker compose exec redis redis-cli TTL YOUR_SHORT_CODE
+```
+
+Replace `YOUR_SHORT_CODE` with an actual short code returned by the API.
+
+## Testing
+
+Run all Go tests:
+
+```bash
+go test ./...
+```
 
 Run service tests with verbose output:
 
-
-
-```powershell
-
+```bash
 go test ./internal/service -v
-
 ```
-
-
 
 Run static analysis:
 
-
-
-```powershell
-
+```bash
 go vet ./...
-
 ```
 
+The test suite covers short-code generation, duplicate-code retries, service errors, cache hits and misses, cache-failure fallback, request validation, and redirect handling.
 
+## Development and Troubleshooting
 
-The existing tests cover short-code generation, duplicate-code retries, service errors, cache hits, cache misses, cache failure fallback, request validation, and redirect handling.
-
-
-
-\### Manual Redis Verification
-
-
-
-After creating and redirecting a short URL, check the cache from a terminal where `redis-cli` is available:
-
-
+Check running services:
 
 ```bash
-
-redis-cli GET YOUR\_SHORT\_CODE
-
-redis-cli TTL YOUR\_SHORT\_CODE
-
+docker compose ps
 ```
 
+View service logs:
 
+```bash
+docker compose logs api
+docker compose logs postgres
+docker compose logs redis
+```
 
-The first command should return the original URL if it has been cached. The second returns the remaining TTL in seconds.
+Restart the services:
 
+```bash
+docker compose restart
+```
 
+Stop the services without removing the named database volume:
 
-\## Current Scope and Future Improvements
+```bash
+docker compose down
+```
 
+If PostgreSQL reports an authentication error, verify that the credentials in `.env` match the database user's configured credentials. Updating `POSTGRES_PASSWORD` in `.env` alone does not change the password of a database user in an already-initialized data directory.
 
+## Future Improvements
 
-Potential next improvements include:
+- Database migrations and versioned schema management
+- Structured logging, request tracing, and graceful server shutdown
+- Metrics for cache hits, cache misses, and database fallbacks
+- Rate limiting and abuse prevention
+- Integration tests against real PostgreSQL and Redis instances
+- Production deployment configuration and monitoring
+- Custom short codes, expiration policies, and URL analytics
 
+## Learning Objectives
 
-
-\- Docker Compose configuration for PostgreSQL, Redis, and the application.
-
-\- Database migration files and repeatable schema setup.
-
-\- Structured logging and request tracing.
-
-\- Context propagation and graceful server shutdown.
-
-\- Metrics for cache hits, cache misses, and database fallbacks.
-
-\- Rate limiting and abuse prevention.
-
-\- Integration tests using real PostgreSQL and Redis instances.
-
-\- Deployment and production configuration.
-
-
-
-\## Learning Objectives
-
-
-
-This project demonstrates practical backend engineering concepts:
-
-
-
-\- HTTP routing and status codes in Go.
-
-\- Layered application architecture.
-
-\- Relational persistence using PostgreSQL.
-
-\- Caching and TTL management with Redis.
-
-\- Error handling and dependency injection.
-
-\- Unit testing and static analysis.
-
-\- Graceful degradation when the cache is unavailable.
-
-
-
+- HTTP routing and status codes in Go
+- Layered application architecture
+- Relational persistence using PostgreSQL
+- Caching and TTL management with Redis
+- Error handling and dependency injection
+- Unit testing and static analysis
+- Docker image building and multi-service orchestration
+- Persistent storage and database initialization
+- Graceful degradation when the cache is unavailable
 
 
